@@ -24,19 +24,25 @@
 
 #ifdef HAVE_GSL
 
-#include "exceptions.h"
-#include "network.h"
-#include "dict.h"
-#include "integerdatum.h"
-#include "doubledatum.h"
-#include "dictutils.h"
-#include "numerics.h"
-#include "universal_data_logger_impl.h"
-#include <limits>
-
+// C++ includes:
+#include <cstdio>
 #include <iomanip>
 #include <iostream>
-#include <cstdio>
+#include <limits>
+
+// Includes from libnestutil:
+#include "numerics.h"
+
+// Includes from nestkernel:
+#include "exceptions.h"
+#include "kernel_manager.h"
+#include "universal_data_logger_impl.h"
+
+// Includes from sli:
+#include "dict.h"
+#include "dictutils.h"
+#include "doubledatum.h"
+#include "integerdatum.h"
 
 /* ----------------------------------------------------------------
  * Recordables map
@@ -114,35 +120,21 @@ nest::iaf_chxk_2008_dynamics( double, const double y[], double f[], void* pnode 
  * ---------------------------------------------------------------- */
 
 nest::iaf_chxk_2008::Parameters_::Parameters_()
-  :
-
-  // Default values chosen based on values found in
+  : // Default values chosen based on values found in
   // Alex Casti's simulator
-  V_th( -45.0 )
-  , // mV
-  g_L( 100.0 )
-  , // nS
-  C_m( 1000.0 )
-  , // pF
-  E_ex( 20.0 )
-  , // mV
-  E_in( -90.0 )
-  , // mV
-  E_L( -60.0 )
-  , // mV
-  tau_synE( 1.0 )
-  , // ms
-  tau_synI( 1.0 )
-  , // ms
-  I_e( 0.0 )
-  , // pA
-  tau_ahp( 0.5 )
-  , // ms
-  g_ahp( 443.8 )
-  , // nS
-  E_ahp( -95.0 )
-  , // mV
-  ahp_bug( false )
+  V_th( -45.0 )     // mV
+  , g_L( 100.0 )    // nS
+  , C_m( 1000.0 )   // pF
+  , E_ex( 20.0 )    // mV
+  , E_in( -90.0 )   // mV
+  , E_L( -60.0 )    // mV
+  , tau_synE( 1.0 ) // ms
+  , tau_synI( 1.0 ) // ms
+  , I_e( 0.0 )      // pA
+  , tau_ahp( 0.5 )  // ms
+  , g_ahp( 443.8 )  // nS
+  , E_ahp( -95.0 )  // mV
+  , ahp_bug( false )
 
 {
   recordablesMap_.create();
@@ -351,7 +343,7 @@ void
 nest::iaf_chxk_2008::update( Time const& origin, const long_t from, const long_t to )
 {
 
-  assert( to >= 0 && ( delay ) from < Scheduler::get_min_delay() );
+  assert( to >= 0 && ( delay ) from < kernel().connection_builder_manager.get_min_delay() );
   assert( from < to );
 
   for ( long_t lag = from; lag < to; ++lag )
@@ -421,7 +413,7 @@ nest::iaf_chxk_2008::update( Time const& origin, const long_t from, const long_t
 
       SpikeEvent se;
       se.set_offset( sigma );
-      network()->send( *this, se, lag );
+      kernel().event_delivery_manager.send( *this, se, lag );
     }
 
     // add incoming spikes
@@ -442,10 +434,12 @@ nest::iaf_chxk_2008::handle( SpikeEvent& e )
   assert( e.get_delay() > 0 );
 
   if ( e.get_weight() > 0.0 )
-    B_.spike_exc_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ),
+    B_.spike_exc_.add_value(
+      e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ),
       e.get_weight() * e.get_multiplicity() );
   else
-    B_.spike_inh_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ),
+    B_.spike_inh_.add_value(
+      e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ),
       -e.get_weight() * e.get_multiplicity() ); // ensure conductance is positive
 }
 
@@ -456,7 +450,8 @@ nest::iaf_chxk_2008::handle( CurrentEvent& e )
 
   // add weighted current; HEP 2002-10-04
   B_.currents_.add_value(
-    e.get_rel_delivery_steps( network()->get_slice_origin() ), e.get_weight() * e.get_current() );
+    e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ),
+    e.get_weight() * e.get_current() );
 }
 
 void

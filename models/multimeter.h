@@ -23,15 +23,20 @@
 #ifndef MULTIMETER_H
 #define MULTIMETER_H
 
+// C++ includes:
 #include <vector>
 
-#include "recording_device.h"
-#include "name.h"
-#include "node.h"
+// Includes from nestkernel:
 #include "connection.h"
-#include "dictutils.h"
 #include "exceptions.h"
+#include "kernel_manager.h"
+#include "node.h"
+#include "recording_device.h"
 #include "sibling_container.h"
+
+// Includes from sli:
+#include "dictutils.h"
+#include "name.h"
 
 /*BeginDocumentation
 Name: multimeter - Device to record analog data from neurons.
@@ -69,15 +74,15 @@ to memory, to screen, with GID or with weight. You must activate accumulator mod
 before simulating. Accumulator data is never written to file. You must extract it
 from the device using GetStatus.
 
-Note:
+Remarks:
  - The set of variables to record and the recording interval must be set
    BEFORE the multimeter is connected to any node, and cannot be changed
    afterwards.
  - A multimeter cannot be frozen.
  - If you record with multimeter in accumulator mode and some of the nodes
-   you record from and others are not, data will only be collected from the
-   unfrozen nodes. Most likely, this will lead to confusing results, so
-   you should not use multimeter with frozen nodes.
+   you record from are frozen and others are not, data will only be collected
+   from the unfrozen nodes. Most likely, this will lead to confusing results,
+   so you should not use multimeter with frozen nodes.
 
 Parameters:
      The following parameters can be set in the status dictionary:
@@ -119,9 +124,6 @@ SeeAlso: Device, RecordingDevice
 
 namespace nest
 {
-
-class Network;
-
 /**
  * General analog data recorder.
  *
@@ -147,11 +149,7 @@ class Network;
  *
  * @note If you want to pick up values at every time stamp,
  *       you must set the interval to the simulation resolution.
- *
- * @todo Testing and Code Review:
- *   - performance: currently about 5% slower than plain voltmeter;
- * but check asserts in universal_data_logger.
- *
+ * *
  * @ingroup Devices
  * @see UniversalDataLogger
  */
@@ -178,10 +176,13 @@ public:
    */
   using Node::handle;
   using Node::handles_test_event;
+  using Node::sends_signal;
 
   port send_test_event( Node&, rport, synindex, bool );
 
   void handle( DataLoggingReply& );
+
+  SignalType sends_signal() const;
 
   void get_status( DictionaryDatum& ) const;
   void set_status( const DictionaryDatum& );
@@ -317,7 +318,7 @@ nest::Multimeter::get_status( DictionaryDatum& d ) const
   // siblings on other threads
   if ( get_thread() == 0 )
   {
-    const SiblingContainer* siblings = network()->get_thread_siblings( get_gid() );
+    const SiblingContainer* siblings = kernel().node_manager.get_thread_siblings( get_gid() );
     std::vector< Node* >::const_iterator sibling;
     for ( sibling = siblings->begin() + 1; sibling != siblings->end(); ++sibling )
       ( *sibling )->get_status( d );
@@ -344,6 +345,11 @@ nest::Multimeter::set_status( const DictionaryDatum& d )
   P_ = ptmp;
 }
 
+inline SignalType
+nest::Multimeter::sends_signal() const
+{
+  return ALL;
+}
 
 } // Namespace
 

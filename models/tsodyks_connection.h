@@ -68,12 +68,12 @@
 
    Parameters:
      The following parameters can be set in the status dictionary:
-     Us         double - maximum probability of realease [0,1]
-     tau_pscs   double - time constants of synaptic current in ms
-     tau_facs   double - time constant for facilitation in ms
-     tau_recs   double - time constant for depression in ms
-     xs         double - initial fraction of synaptic vesicles in the readily releasable pool [0,1]
-     ys         double - initial fraction of synaptic vesicles in the synaptic cleft [0,1]
+     U         double - maximum probability of release [0,1]
+     tau_psc   double - time constant of synaptic current in ms
+     tau_fac   double - time constant for facilitation in ms
+     tau_rec   double - time constant for depression in ms
+     x         double - initial fraction of synaptic vesicles in the readily releasable pool [0,1]
+     y         double - initial fraction of synaptic vesicles in the synaptic cleft [0,1]
 
   References:
    [1] Tsodyks, Uziel, Markram (2000) Synchrony Generation in Recurrent Networks
@@ -93,9 +93,11 @@
  * GenericConnector.
  */
 
-
-#include "connection.h"
+// C++ includes:
 #include <cmath>
+
+// Includes from nestkernel:
+#include "connection.h"
 
 namespace nest
 {
@@ -220,7 +222,6 @@ TsodyksConnection< targetidentifierT >::send( Event& e,
   double_t Pyy = std::exp( -h / tau_psc_ );
   double_t Pzz = std::exp( -h / tau_rec_ );
 
-  // double_t Pzy = (Pyy - Pzz) * tau_rec_ / (tau_psc_ - tau_rec_);
   double_t Pxy = ( ( Pzz - 1.0 ) * tau_rec_ - ( Pyy - 1.0 ) * tau_psc_ ) / ( tau_psc_ - tau_rec_ );
   double_t Pxz = 1.0 - Pzz;
 
@@ -231,7 +232,6 @@ TsodyksConnection< targetidentifierT >::send( Event& e,
 
   u_ *= Puu;
   x_ += Pxy * y_ + Pxz * z;
-  // z = Pzz * z_ + Pzy * y_;
   y_ *= Pyy;
 
   // delta function u
@@ -318,9 +318,20 @@ TsodyksConnection< targetidentifierT >::set_status( const DictionaryDatum& d, Co
   updateValue< double_t >( d, names::weight, weight_ );
 
   updateValue< double_t >( d, "U", U_ );
+  if ( U_ > 1.0 || U_ < 0.0 )
+    throw BadProperty( "U must be in [0,1]." );
+
   updateValue< double_t >( d, "tau_psc", tau_psc_ );
+  if ( tau_psc_ <= 0.0 )
+    throw BadProperty( "tau_psc must be > 0." );
+
   updateValue< double_t >( d, "tau_rec", tau_rec_ );
+  if ( tau_rec_ <= 0.0 )
+    throw BadProperty( "tau_rec must be > 0." );
+
   updateValue< double_t >( d, "tau_fac", tau_fac_ );
+  if ( tau_fac_ < 0.0 )
+    throw BadProperty( "tau_fac must be >= 0." );
 
   updateValue< double_t >( d, "u", u_ );
 }

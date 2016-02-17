@@ -23,9 +23,12 @@
 #ifndef EXCEPTIONS_H
 #define EXCEPTIONS_H
 
-#include "sliexceptions.h"
+// Includes from nestkernel:
 #include "nest_time.h"
+
+// Includes from sli:
 #include "name.h"
+#include "sliexceptions.h"
 
 class SLIInterpreter;
 
@@ -836,7 +839,7 @@ public:
    * @param model name of model causing problem
    */
   NumericalInstability( const std::string& model )
-    : KernelException( "GSLSolverFailure" )
+    : KernelException( "NumericalInstability" )
     , model_( model )
   {
   }

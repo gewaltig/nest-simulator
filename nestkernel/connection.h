@@ -23,19 +23,25 @@
 #ifndef CONNECTION_H
 #define CONNECTION_H
 
+// Includes from nestkernel:
+#include "common_synapse_properties.h"
+#include "connection_label.h"
+#include "delay_checker.h"
+#include "event.h"
+#include "kernel_manager.h"
+#include "nest_names.h"
 #include "nest_time.h"
 #include "nest_timeconverter.h"
-#include "nest.h"
+#include "nest_types.h"
 #include "node.h"
-#include "event.h"
-#include "dict.h"
-#include "dictutils.h"
-#include "arraydatum.h"
-#include "doubledatum.h"
-#include "common_synapse_properties.h"
-#include "nest_names.h"
 #include "spikecounter.h"
 #include "syn_id_delay.h"
+
+// Includes from sli:
+#include "arraydatum.h"
+#include "dict.h"
+#include "dictutils.h"
+#include "doubledatum.h"
 
 namespace nest
 {
@@ -112,6 +118,11 @@ class Connection
 {
 
 public:
+  // this typedef may be overwritten in the derived connection classes in order to attach a specific
+  // event type to this connection type, used in secondary connections not used in primary
+  // connectors
+  typedef SecondaryEvent EventType;
+
   Connection()
     : target_()
     , syn_id_delay_( 1.0 )
@@ -196,6 +207,11 @@ public:
     return syn_id_delay_.syn_id;
   }
 
+  long_t
+  get_label() const
+  {
+    return UNLABELED_CONNECTION;
+  }
 
   /**
    * triggers an update of a synaptic weight
@@ -252,12 +268,19 @@ Connection< targetidentifierT >::check_connection_( Node& dummy_target,
   // this line might throw an exception
   source.send_test_event( dummy_target, receptor_type, get_syn_id(), true );
 
-  // 2. does the target accept the event type sent by sourc
+  // 2. does the target accept the event type sent by source
   // try to send event from source to target
   // this returns the port of the incoming connection
   // p must be stored in the base class connection
   // this line might throw an exception
   target_.set_rport( source.send_test_event( target, receptor_type, get_syn_id(), false ) );
+
+  // 3. do the events sent by source mean the same thing as they are
+  // interpreted in target?
+  // note that we here use a bitwise and operation (&), because we interpret each
+  // bit in the signal type as a collection of individual flags
+  if ( !( source.sends_signal() & target.receives_signal() ) )
+    throw IllegalConnection();
 
   target_.set_target( &target );
 }
@@ -272,12 +295,12 @@ Connection< targetidentifierT >::get_status( DictionaryDatum& d ) const
 
 template < typename targetidentifierT >
 inline void
-Connection< targetidentifierT >::set_status( const DictionaryDatum& d, ConnectorModel& cm )
+Connection< targetidentifierT >::set_status( const DictionaryDatum& d, ConnectorModel& )
 {
   double_t delay;
   if ( updateValue< double_t >( d, names::delay, delay ) )
   {
-    cm.assert_valid_delay_ms( delay );
+    kernel().connection_builder_manager.get_delay_checker().assert_valid_delay_ms( delay );
     syn_id_delay_.set_delay_ms( delay );
   }
   // no call to target_.set_status() because target and rport cannot be changed

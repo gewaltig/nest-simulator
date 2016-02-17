@@ -1,5 +1,5 @@
 AC_PREREQ(2.63)
-AC_INIT([nest], [2.6.1], [nest_user@nest-initiative.org])
+AC_INIT([nest], [2.10.0], [nest_user@nest-initiative.org])
 
 # Prevent automatic rebuilding of Makefile.ins and configure if their
 # content or timestamp changes. Not doing this lead to failing builds
@@ -12,8 +12,8 @@ AM_MAINTAINER_MODE([disable])
 # The patchlevel is updated automatically by the script
 # releasetools/buildnest
 SLI_MAJOR=2
-SLI_MINOR=6
-SLI_PATCHLEVEL=1
+SLI_MINOR=10
+SLI_PATCHLEVEL=0
 
 SLI_PRGNAME="nest-$SLI_MAJOR.$SLI_MINOR.$SLI_PATCHLEVEL"
 SLI_VERSION=$SLI_MAJOR.$SLI_MINOR.$SLI_PATCHLEVEL
@@ -160,10 +160,9 @@ else
   AC_MSG_RESULT([yes ($bluegene_architecture)])
 fi
 
-# register variable IS_BLUEGENE to be visible in Makefile.am
+# register IS_BLUEGENE to be visible in Makefile.am
 # required to suppress slidoc installation, which would fail due to cross-compile
 AM_CONDITIONAL(IS_BLUEGENE, test "x$configure_bluegene" != xno)
-
 
 # Manually activate MPI, allow to specify directory containing MPI
 #
@@ -185,6 +184,7 @@ SLI_scali_option="no"
 if test "x$configure_bluegene" = xyes ; then
   SLI_distributed=set
   SLI_mpi_option=yes
+  AC_DEFINE(IS_BLUEGENE, 1, [Configuring for Blue Gene]) 
   if test "x$bluegene_architecture" = xL; then
     AC_DEFINE(IS_BLUEGENE_L, 1, [Configuring for Blue Gene/L])
     bluegene_dynamic_libs=no # no dynamic libs on BG/L
@@ -572,6 +572,52 @@ if test "$ac_have_expm1" = yes ; then
 fi
 AC_MSG_RESULT($ac_have_expm1)
 
+# check if NAN is available after we have switched to C++
+AC_MSG_CHECKING([for NAN ])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <math.h>]],
+[[double x = NAN;]])],
+ac_have_nan="yes", ac_have_nan="no")
+if test "$ac_have_nan" = yes ; then
+  AC_DEFINE(HAVE_NAN, 1, ["Define if NAN is available"])
+fi
+AC_MSG_RESULT($ac_have_nan)
+
+# check if std::nan(NULL) is available after we have switched to C++
+# since c++11
+AC_MSG_CHECKING([for std::nan(NULL) ])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <cmath>]],
+[[double x = std::nan(NULL);]])],
+ac_have_std_nan="yes", ac_have_std_nan="no")
+if test "$ac_have_std_nan" = yes ; then
+  AC_DEFINE(HAVE_STD_NAN, 1, ["Define if std::nan(NULL) is available"])
+fi
+AC_MSG_RESULT($ac_have_std_nan)
+
+# check if isnan is available after we have switched to C++
+AC_MSG_CHECKING([for isnan ])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <math.h>]],
+[[isnan(0.0f/0.0f);]])],
+ac_have_isnan="yes", ac_have_isnan="no")
+if test "$ac_have_isnan" = yes ; then
+  AC_DEFINE(HAVE_ISNAN,1, ["Define if isnan() is available"])
+fi
+AC_MSG_RESULT($ac_have_isnan)
+
+# check if std::isnan is available after we have switched to C++
+# since c++11
+AC_MSG_CHECKING([for std::isnan ])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <cmath>]],
+[[std::isnan(0.0f/0.0f);]])],
+ac_have_std_isnan="yes", ac_have_std_isnan="no")
+if test "$ac_have_std_isnan" = yes ; then
+  AC_DEFINE(HAVE_STD_ISNAN,1, ["Define if std::isnan() is available"])
+fi
+AC_MSG_RESULT($ac_have_std_isnan)
+
+if test "$ac_have_std_isnan" = no && test "$ac_have_isnan" = no; then
+  AC_MSG_ERROR([You need either std::isnan or isnan to compile NEST.])
+fi
+
 #-- Look for programs needed in the Makefile
 AC_PROG_CXXCPP
 
@@ -730,11 +776,11 @@ SLI_USER_MODULES=""
 # SLI_USER_MODULES_LDADD collects what needs to be added to LDADD
 SLI_USER_MODULES_LDADD=""
 
-AC_ARG_WITH(modules,[  --with-modules = external modules to be linked in],
+AC_ARG_WITH(modules,[  --with-modules=MODULES external modules to be linked in],
 [
 if test "$withval" != no; then
   for mod in $withval; do
-    SLI_USER_MODULES_LDADD=" $prefix/lib/nest/lib$mod.la"
+    SLI_USER_MODULES_LDADD="$SLI_USER_MODULES_LDADD $prefix/lib/nest/lib$mod.la"
     SLI_USER_MODULES="$SLI_USER_MODULES $mod"
   done
 fi
@@ -778,10 +824,38 @@ for mod in $SLI_MODULES; do
   Mod=`grep SLIModule ${srcdir}/${modheader} | sed -n 's/class *\(.*\) *:.*/\1/p' | tr -d ' '`
   SLI_CHECK_SOURCE_FILE([$srcdir/$mod/Makefile.am],
     [MODULE_INCLUDES="${MODULE_INCLUDES}#include \"../${modheader}\"\n"
-     ADD_STATIC_MODULES="${ADD_STATIC_MODULES}  engine.addmodule(new nest::${Mod}(net));\n"],
+     ADD_STATIC_MODULES="${ADD_STATIC_MODULES}  engine.addmodule(new nest::${Mod}());\n"],
     [printf ""])
 
 done
+
+# On Bluegene, we need to link user modules statically and add them to startup
+# We require that the module is installed and has its header file in $prefix/include
+if test x$configure_bluegene == xyes ; then
+  for umod in $SLI_USER_MODULES ; do
+    modheader="${umod}.h"
+    fullmodheader="${prefix}/include/${modheader}"
+    # get module namespace and class from the module's main header
+    # the following chain of commands (feel free to beautify!)
+    # 1. removes all block comments
+    # 2. removes all // comments
+    # 3. removes all "namespace nest" lines
+    # 4. selects all "namespace" lines (should only be one!!!)
+    # 5. extracts the name of the module namespace 
+    # 6. appends :: if modnamespace is not empty
+    modnamespace=`sed "/^ *\/\*/,/*\/ *$/d" ${fullmodheader} | sed "/\/\/.*$/d" | grep -v "namespace *nest" | grep namespace | sed -n 's/namespace *\(.*\)/\1/p' | tr -d ' {'`
+    if test x$modnamespace != x ; then
+      modnamespace="${modnamespace}::"
+    fi
+    modclass=`grep SLIModule ${fullmodheader} | sed -n 's/class *\(.*\) *:.*/\1/p' | tr -d ' '`
+    # Do NOT pass network to user modules, it is outdated
+    SLI_CHECK_SOURCE_FILE([$prefix/include/$modheader],
+      [MODULE_INCLUDES="${MODULE_INCLUDES}#include \"${fullmodheader}\"\n"
+       ADD_STATIC_MODULES="${ADD_STATIC_MODULES}  engine.addmodule(new ${modnamespace}${modclass}());\n"],
+      [printf ""])
+  done
+fi
+
 
 # Now generate $PKGBUILDDIR/nest/static_modules.h, including the module headers
 # and providing the add_static_modules() function.
@@ -791,8 +865,8 @@ AC_CONFIG_COMMANDS([nest/static_modules.h],
 	           [printf "$guard$module_includes$standard_includes$function_signature$module_loaders$end" > nest/static_modules.h],
 		   [guard="#ifndef STATIC_MODULES_H\n#define STATIC_MODULES_H\n\n"
 		    module_includes='$MODULE_INCLUDES\n'
-		    standard_includes="#include \"interpret.h\"\n#include \"network.h\"\n\n"
-		    function_signature="void add_static_modules(SLIInterpreter& engine, nest::Network& net)\n{\n"
+		    standard_includes="#include \"interpret.h\"\n\n"
+		    function_signature="void add_static_modules(SLIInterpreter& engine)\n{\n"
 		    module_loaders='$ADD_STATIC_MODULES'
 		    end="}\n\n#endif\n"])
 
@@ -837,6 +911,7 @@ AC_SUBST(HAVE_READLINE)
 AC_SUBST(HAVE_VAMPIR)
 AC_SUBST(VAMPIR_LIBS)
 AC_SUBST(VAMPIR_CFLAGS)
+AC_SUBST(IS_BLUEGENE)
 AC_SUBST(IS_BLUEGENE_L)
 AC_SUBST(IS_BLUEGENE_P)
 AC_SUBST(IS_BLUEGENE_Q)
@@ -894,7 +969,7 @@ AC_SUBST(HAVE_LIBLTDL)
 AC_SUBST(LIBADD_DL)
 AC_SUBST(SLI_MODULES_LDADD)
 AC_SUBST(SLI_USER_MODULES_LDADD)
-
+AC_SUBST(configure_bluegene)
 
 AC_CONFIG_HEADER(libnestutil/config.h)
 AC_CONFIG_FILES(libnestutil/sliconfig.h)
@@ -1125,8 +1200,8 @@ if test $SLI_distributed = set; then
   echo
 fi
 
-echo "If you experience problems with the installation or the use of"
-echo "NEST, please see http://nest-initiative.org/index.php/FAQ, or"
-echo "go to http://nest-initiative.org/index.php/Community to find out"
-echo "how to join the user mailing list."
+echo "If you experience problems with the installation or the use of NEST,"
+echo "please see http://www.nest-simulator.org/frequently_asked_questions"
+echo "or go to http://www.nest-simulator.org/community to find out how to"
+echo "join the user mailing list."
 echo

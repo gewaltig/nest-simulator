@@ -23,14 +23,18 @@
 #ifndef POISSON_GENERATOR_PS_H
 #define POISSON_GENERATOR_PS_H
 
+// C++ includes:
 #include <vector>
-#include "nest.h"
+
+// Includes from librandom:
+#include "exp_randomdev.h"
+
+// Includes from nestkernel:
+#include "connection.h"
 #include "event.h"
+#include "nest_types.h"
 #include "node.h"
 #include "stimulating_device.h"
-#include "scheduler.h"
-#include "exp_randomdev.h"
-#include "connection.h"
 
 /*BeginDocumentation
 Name: poisson_generator_ps - simulate neuron firing with Poisson processes
@@ -48,7 +52,7 @@ Parameters:
    rate     - mean firing rate. (double, var)
    dead_time - minimal time between two spikes. (double, var)
 
-Note:
+Remarks:
    - This generator must be connected to all its targets using the
      same synapse model. Failure to do so will only be detected at
      runtime.

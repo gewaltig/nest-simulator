@@ -47,7 +47,7 @@
      tau_rec    double - time constant for depression in ms, default=800 ms
      tau_fac    double - time constant for facilitation in ms, default=0 (off)
 
-  Notes:
+  Remarks:
 
      Under identical conditions, the tsodyks2_synapse produces
      slightly lower peak amplitudes than the tsodyks_synapse. However,
@@ -77,8 +77,12 @@
  * A suitable Connector containing these connections can be obtained from the template
  * GenericConnector.
  */
-#include "connection.h"
+
+// C++ includes:
 #include <cmath>
+
+// Includes from nestkernel:
+#include "connection.h"
 
 namespace nest
 {
@@ -255,9 +259,21 @@ Tsodyks2Connection< targetidentifierT >::set_status( const DictionaryDatum& d, C
   updateValue< double_t >( d, names::weight, weight_ );
 
   updateValue< double_t >( d, names::dU, U_ );
+  if ( U_ > 1.0 || U_ < 0.0 )
+    throw BadProperty( "U must be in [0,1]." );
+
   updateValue< double_t >( d, names::u, u_ );
+  if ( u_ > 1.0 || u_ < 0.0 )
+    throw BadProperty( "u must be in [0,1]." );
+
   updateValue< double_t >( d, names::tau_rec, tau_rec_ );
+  if ( tau_rec_ <= 0.0 )
+    throw BadProperty( "tau_rec must be > 0." );
+
   updateValue< double_t >( d, names::tau_fac, tau_fac_ );
+  if ( tau_fac_ < 0.0 )
+    throw BadProperty( "tau_fac must be >= 0." );
+
   updateValue< double_t >( d, names::x, x_ );
 }
 

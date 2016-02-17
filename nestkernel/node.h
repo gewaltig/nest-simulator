@@ -22,18 +22,24 @@
 
 #ifndef NODE_H
 #define NODE_H
+
+// C++ includes:
 #include <bitset>
-#include <string>
-#include <sstream>
-#include <vector>
 #include <deque>
+#include <sstream>
+#include <string>
 #include <utility>
-#include "nest.h"
-#include "nest_time.h"
-#include "nest_names.h"
-#include "dictdatum.h"
-#include "histentry.h"
+#include <vector>
+
+// Includes from nestkernel:
 #include "event.h"
+#include "histentry.h"
+#include "nest_names.h"
+#include "nest_time.h"
+#include "nest_types.h"
+
+// Includes from sli:
+#include "dictdatum.h"
 
 /** @file node.h
  * Declarations for base class Node
@@ -41,14 +47,9 @@
 
 namespace nest
 {
-
-class Scheduler;
 class Model;
-
 class Subnet;
-class Network;
 class Archiving_Node;
-class histentry;
 
 
 /**
@@ -93,15 +94,14 @@ class histentry;
    SeeAlso: GetStatus, SetStatus, elementstates
  */
 
-
 class Node
 {
-  friend class Network;
-  friend class Scheduler;
+  friend class NodeManager;
   friend class Subnet;
   friend class proxynode;
   friend class Synapse;
   friend class Model;
+  friend class SimulationManager;
 
   Node& operator=( const Node& ); //!< not implemented
 
@@ -155,6 +155,8 @@ public:
    * not have proxies on remote threads. This is used to
    * discriminate between different types of nodes, when adding new
    * nodes to the network.
+   *
+   * TODO: Is this true for *any* model at all? Maybe MUSIC related?
    */
   virtual bool one_node_per_process() const;
 
@@ -237,10 +239,15 @@ public:
   bool is_frozen() const;
 
   /**
-   * Return pointer to network driver class.
-   * @todo This member should return a reference, not a pointer.
+   * Returns true if the node requires a preliminary update step
    */
-  static Network* network();
+  bool needs_prelim_update() const;
+
+  /**
+   * Sets needs_prelim_up_ member variable
+   * (to be able to set it to "true" for any class derived from Node)
+   */
+  void set_needs_prelim_update( const bool );
 
   /**
    * Returns true if the node is allocated in the local process.
@@ -287,7 +294,7 @@ public:
   /**
    * Finalize node.
    * Override this function if a node needs to "wrap up" things after a simulation,
-   * i.e., before Scheduler::resume() returns. Typical use-cases are devices
+   * i.e., before Network::get_network().resume() returns. Typical use-cases are devices
    * that need to flush buffers or disconnect from external files or pipes.
    */
   virtual void
@@ -309,6 +316,23 @@ public:
    */
   virtual void update( Time const&, const long_t, const long_t ) = 0;
 
+  /**
+   * Bring the node from state $t$ to $t+n*dt$, sends SecondaryEvents
+   * (e.g. GapJunctionEvent) and resets state variables to values at $t$.
+   *
+   * n->prelim_update(T, from, to) performs the update steps beginning
+   * at T+from .. T+to-1.
+   *
+   * Does not emit spikes, does not log state variables.
+   *
+   * throws UnexpectedEvent if not reimplemented in derived class
+   *
+   * @param Time   network time at beginning of time slice.
+   * @param long_t initial step inside time slice
+   * @param long_t post-final step inside time slice
+   *
+   */
+  virtual bool prelim_update( Time const&, const long_t, const long_t );
 
   /**
    * @defgroup status_interface Configuration interface.
@@ -397,6 +421,16 @@ public:
   virtual port handles_test_event( DoubleDataEvent&, rport receptor_type );
   virtual port handles_test_event( DSSpikeEvent&, rport receptor_type );
   virtual port handles_test_event( DSCurrentEvent&, rport receptor_type );
+  virtual port handles_test_event( GapJunctionEvent&, rport receptor_type );
+
+  /**
+   * Required to check, if source neuron may send a SecondaryEvent.
+   * This base class implementation throws IllegalConnection
+   * and needs to be overwritten in the derived class.
+   * @ingroup event_interface
+   * @throws IllegalConnection
+   */
+  virtual void sends_secondary_event( GapJunctionEvent& ge );
 
   /**
    * Register a STDP connection
@@ -405,14 +439,6 @@ public:
    *
    */
   virtual void register_stdp_connection( double_t );
-
-  /**
-   * Unregister a STDP connection
-   *
-   * @throws IllegalConnection
-   *
-   */
-  virtual void unregister_stdp_connection( double_t );
 
   /**
    * Handle incoming spike events.
@@ -477,6 +503,101 @@ public:
   virtual void handle( DoubleDataEvent& e );
 
   /**
+   * Handler for gap junction events.
+   * @see handle(thread, GapJunctionEvent&)
+   * @ingroup event_interface
+   * @throws UnexpectedEvent
+   */
+  virtual void handle( GapJunctionEvent& e );
+
+  /**
+   * @defgroup SP_functions Structural Plasticity in NEST.
+   * Functions related to accessibility and setup of variables required for
+   * the implementation of a model of Structural Plasticity in NEST.
+   *
+   */
+
+  /**
+   * Return the Ca_minus value at time Ca_t which corresponds to the time of
+   * the last update in Calcium concentration which is performed each time
+   * a Node spikes.
+   * Return 0.0 if not overridden
+   * @ingroup SP_functions
+   */
+  virtual double_t
+  get_Ca_minus() const
+  {
+    return 0.0;
+  }
+
+  /**
+   * Get the number of synaptic element for the current Node at Ca_t which
+   * corresponds to the time of the last spike.
+   * Return 0.0 if not overridden
+   * @ingroup SP_functions
+   */
+  virtual double_t get_synaptic_elements( Name ) const
+  {
+    return 0.0;
+  }
+
+  /**
+   * Get the number of vacant synaptic element for the current Node
+   * Return 0 if not overridden
+   * @ingroup SP_functions
+   */
+  virtual int_t get_synaptic_elements_vacant( Name ) const
+  {
+    return 0;
+  }
+
+  /**
+   * Get the number of connected synaptic element for the current Node
+   * Return 0 if not overridden
+   * @ingroup SP_functions
+   */
+  virtual int_t get_synaptic_elements_connected( Name ) const
+  {
+    return 0;
+  }
+
+  /**
+   * Get the number of all synaptic elements for the current Node at time t
+   * Return an empty map if not overridden
+   * @ingroup SP_functions
+   */
+  virtual std::map< Name, double_t >
+  get_synaptic_elements() const
+  {
+    return std::map< Name, double >();
+  }
+
+  /**
+   * Triggers the update of all SynapticElements
+   * stored in the synaptic_element_map_. It also updates the calcium concentration.
+   * @param t double_t time when the update is being performed
+   * @ingroup SP_functions
+   */
+  virtual void update_synaptic_elements( double_t ){};
+
+  /**
+   * Is used to reduce the number of synaptic elements in the node through
+   * time. This amount is defined by tau_vacant.
+   * @ingroup SP_functions
+   */
+  virtual void decay_synaptic_elements_vacant(){};
+
+  /**
+   * Is used to update the number of connected
+   * synaptic elements (SynapticElement::z_connected_) when a synapse
+   * is formed or deleted.
+   * @param type Name, name of the synaptic element to connect
+   * @param n int_t number of new connections of the given type
+   * @ingroup SP_functions
+   */
+  virtual void connect_synaptic_element( Name, int_t ){};
+
+  /**
    * return the Kminus value at t (in ms).
    * @throws UnexpectedEvent
    */
@@ -518,7 +639,7 @@ public:
   /**
    * Store the number of the thread to which the node is assigned.
    * The assignment is done after node creation by the Network class.
-   * @see: Network::add_node().
+   * @see: NodeManager::add_node().
    */
   void set_thread( thread );
 
@@ -529,7 +650,7 @@ public:
 
   /**
    * Store the number of the virtual process to which the node is assigned.
-   * This is assigned to the node in network::add_node().
+   * This is assigned to the node in NodeManager::add_node().
    */
   void set_vp( thread );
 
@@ -539,7 +660,7 @@ public:
   thread get_vp() const;
 
   /** Set the model id.
-   * This method is called by Network::add_node() when a node is created.
+   * This method is called by NodeManager::add_node() when a node is created.
    * @see get_model_id()
    */
   void set_model_id( int );
@@ -548,6 +669,27 @@ public:
    * @returns true if node is a subnet.
    */
   virtual bool is_subnet() const;
+
+  /**
+   * @returns type of signal this node produces
+   * used in check_connection to only connect neurons which send / receive compatible information
+   */
+  virtual SignalType
+  sends_signal() const
+  {
+    return SPIKE;
+  }
+
+  /**
+   * @returns type of signal this node consumes
+   * used in check_connection to only connect neurons which send / receive compatible information
+   */
+  virtual SignalType
+  receives_signal() const
+  {
+    return SPIKE;
+  }
+
 
   /**
    *  Return a dictionary with the node's properties.
@@ -709,15 +851,25 @@ private:
   thread vp_;                //!< virtual process node is assigned to
   bool frozen_;              //!< node shall not be updated if true
   bool buffers_initialized_; //!< Buffers have been initialized
-
-protected:
-  static Network* net_; //!< Pointer to global network driver.
+  bool needs_prelim_up_;     //!< node requires preliminary update step
 };
 
 inline bool
 Node::is_frozen() const
 {
   return frozen_;
+}
+
+inline bool
+Node::needs_prelim_update() const
+{
+  return needs_prelim_up_;
+}
+
+inline void
+Node::set_needs_prelim_update( const bool npu )
+{
+  needs_prelim_up_ = npu;
 }
 
 inline bool
@@ -820,12 +972,6 @@ inline void
 Node::set_parent_( Subnet* c )
 {
   parent_ = c;
-}
-
-inline Network*
-Node::network()
-{
-  return net_;
 }
 
 inline void

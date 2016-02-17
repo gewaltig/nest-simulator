@@ -21,14 +21,23 @@
  */
 
 #include "ppd_sup_generator.h"
-#include "network.h"
-#include "dict.h"
-#include "integerdatum.h"
-#include "doubledatum.h"
-#include "numerics.h"
-#include "datum.h"
+
+// C++ includes:
 #include <algorithm>
 #include <limits>
+
+// Includes from libnestutil:
+#include "numerics.h"
+
+// Includes from nestkernel:
+#include "event_delivery_manager_impl.h"
+#include "kernel_manager.h"
+
+// Includes from sli:
+#include "datum.h"
+#include "dict.h"
+#include "doubledatum.h"
+#include "integerdatum.h"
 
 
 /* ----------------------------------------------------------------
@@ -98,16 +107,12 @@ nest::ppd_sup_generator::Age_distribution_::update( double_t hazard_step, libran
  * ---------------------------------------------------------------- */
 
 nest::ppd_sup_generator::Parameters_::Parameters_()
-  : rate_( 0.0 )
-  , // Hz
-  dead_time_( 0.0 )
-  , // ms
-  n_proc_( 1 )
-  , frequency_( 0.0 )
-  , // Hz
-  amplitude_( 0.0 )
-  , // percentage
-  num_targets_( 0 )
+  : rate_( 0.0 )      // Hz
+  , dead_time_( 0.0 ) // ms
+  , n_proc_( 1 )
+  , frequency_( 0.0 ) // Hz
+  , amplitude_( 0.0 ) // percentage
+  , num_targets_( 0 )
 {
 }
 
@@ -122,7 +127,7 @@ nest::ppd_sup_generator::Parameters_::get( DictionaryDatum& d ) const
   ( *d )[ names::dead_time ] = dead_time_;
   ( *d )[ names::n_proc ] = n_proc_;
   ( *d )[ names::frequency ] = frequency_;
-  ( *d )[ names::amplitude ] = amplitude_;
+  ( *d )[ names::relative_amplitude ] = amplitude_;
 }
 
 void
@@ -146,7 +151,7 @@ nest::ppd_sup_generator::Parameters_::set( const DictionaryDatum& d )
 
   updateValue< double_t >( d, names::frequency, frequency_ );
 
-  updateValue< double_t >( d, names::amplitude, amplitude_ );
+  updateValue< double_t >( d, names::relative_amplitude, amplitude_ );
   if ( amplitude_ > 1.0 or amplitude_ < 0.0 )
     throw BadProperty( "The relative amplitude of the rate modulation must be in [0,1]." );
 }
@@ -224,7 +229,7 @@ nest::ppd_sup_generator::calibrate()
 void
 nest::ppd_sup_generator::update( Time const& T, const long_t from, const long_t to )
 {
-  assert( to >= 0 && ( delay ) from < Scheduler::get_min_delay() );
+  assert( to >= 0 && ( delay ) from < kernel().connection_builder_manager.get_min_delay() );
   assert( from < to );
 
   if ( P_.rate_ <= 0 || P_.num_targets_ == 0 )
@@ -247,7 +252,7 @@ nest::ppd_sup_generator::update( Time const& T, const long_t from, const long_t 
       V_.hazard_step_t_ = V_.hazard_step_;
 
     DSSpikeEvent se;
-    network()->send( *this, se, lag );
+    kernel().event_delivery_manager.send( *this, se, lag );
   }
 }
 
@@ -262,8 +267,8 @@ nest::ppd_sup_generator::event_hook( DSSpikeEvent& e )
   assert( 0 <= prt && static_cast< size_t >( prt ) < B_.age_distributions_.size() );
 
   // age_distribution object propagates one time step and returns number of spikes
-  ulong_t n_spikes =
-    B_.age_distributions_[ prt ].update( V_.hazard_step_t_, net_->get_rng( get_thread() ) );
+  ulong_t n_spikes = B_.age_distributions_[ prt ].update(
+    V_.hazard_step_t_, kernel().rng_manager.get_rng( get_thread() ) );
 
   if ( n_spikes > 0 ) // we must not send events with multiplicity 0
   {

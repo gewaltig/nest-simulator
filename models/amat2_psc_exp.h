@@ -24,19 +24,17 @@
 #ifndef AMAT2_PSC_EXP_H
 #define AMAT2_PSC_EXP_H
 
-#include "nest.h"
-#include "event.h"
+// Includes from nestkernel:
 #include "archiving_node.h"
-#include "ring_buffer.h"
 #include "connection.h"
-#include "universal_data_logger.h"
+#include "event.h"
+#include "nest_types.h"
 #include "recordables_map.h"
+#include "ring_buffer.h"
+#include "universal_data_logger.h"
 
 namespace nest
 {
-
-class Network;
-
 /* BeginDocumentation
    Name: amat2_psc_exp - Non-resetting leaky integrate-and-fire neuron model with
    exponential PSCs and adaptive threshold.
@@ -108,7 +106,7 @@ class Network;
    V_m          Non-resetting membrane potential
    V_th         Two-timescale adaptive threshold
 
-   Note:
+   Remarks:
    tau_m != tau_syn_{ex,in} is required by the current implementation to avoid a
    degenerate case of the ODE describing the model [1]. For very similar values,
    numerics will be unstable.

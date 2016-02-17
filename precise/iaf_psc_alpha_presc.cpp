@@ -22,16 +22,23 @@
 
 #include "iaf_psc_alpha_presc.h"
 
-#include "exceptions.h"
-#include "network.h"
-#include "dict.h"
-#include "integerdatum.h"
-#include "doubledatum.h"
-#include "dictutils.h"
+// C++ includes:
+#include <limits>
+
+// Includes from libnestutil:
 #include "numerics.h"
+#include "propagator_stability.h"
+
+// Includes from nestkernel:
+#include "exceptions.h"
+#include "kernel_manager.h"
 #include "universal_data_logger_impl.h"
 
-#include <limits>
+// Includes from sli:
+#include "dict.h"
+#include "dictutils.h"
+#include "doubledatum.h"
+#include "integerdatum.h"
 
 /* ----------------------------------------------------------------
  * Recordables map
@@ -59,21 +66,14 @@ RecordablesMap< iaf_psc_alpha_presc >::create()
  * ---------------------------------------------------------------- */
 
 nest::iaf_psc_alpha_presc::Parameters_::Parameters_()
-  : tau_m_( 10.0 )
-  , // ms
-  tau_syn_( 2.0 )
-  , // ms
-  c_m_( 250.0 )
-  , // pF
-  t_ref_( 2.0 )
-  , // ms
-  E_L_( -70.0 )
-  , // mV
-  I_e_( 0.0 )
-  , // pA
-  U_th_( -55.0 - E_L_ )
-  , // mV, rel to E_L_
-  U_min_( -std::numeric_limits< double_t >::infinity() )
+  : tau_m_( 10.0 )        // ms
+  , tau_syn_( 2.0 )       // ms
+  , c_m_( 250.0 )         // pF
+  , t_ref_( 2.0 )         // ms
+  , E_L_( -70.0 )         // mV
+  , I_e_( 0.0 )           // pA
+  , U_th_( -55.0 - E_L_ ) // mV, rel to E_L_
+  , U_min_( -std::numeric_limits< double_t >::infinity() )
   , U_reset_( -70.0 - E_L_ )
   , Interpol_( iaf_psc_alpha_presc::LINEAR )
 {
@@ -164,11 +164,6 @@ nest::iaf_psc_alpha_presc::Parameters_::set( const DictionaryDatum& d )
   if ( tau_m_ <= 0 || tau_syn_ <= 0 )
     throw BadProperty( "All time constants must be strictly positive." );
 
-  if ( tau_m_ == tau_syn_ )
-    throw BadProperty(
-      "Membrane and synapse time constant(s) must differ."
-      "See note in documentation." );
-
   return delta_EL;
 }
 
@@ -176,8 +171,6 @@ void
 nest::iaf_psc_alpha_presc::State_::get( DictionaryDatum& d, const Parameters_& p ) const
 {
   def< double >( d, names::V_m, y3_ + p.E_L_ ); // Membrane potential
-  def< double >( d, names::t_spike, Time( Time::step( last_spike_step_ ) ).get_ms() );
-  def< double >( d, names::offset, last_spike_offset_ );
 }
 
 void
@@ -206,7 +199,7 @@ nest::iaf_psc_alpha_presc::Buffers_::Buffers_( const Buffers_&, iaf_psc_alpha_pr
  * ---------------------------------------------------------------- */
 
 nest::iaf_psc_alpha_presc::iaf_psc_alpha_presc()
-  : Node()
+  : Archiving_Node()
   , P_()
   , S_()
   , B_( *this )
@@ -215,7 +208,7 @@ nest::iaf_psc_alpha_presc::iaf_psc_alpha_presc()
 }
 
 nest::iaf_psc_alpha_presc::iaf_psc_alpha_presc( const iaf_psc_alpha_presc& n )
-  : Node( n )
+  : Archiving_Node( n )
   , P_( n.P_ )
   , S_( n.S_ )
   , B_( n.B_, *this )
@@ -242,6 +235,8 @@ nest::iaf_psc_alpha_presc::init_buffers_()
   B_.currents_.clear(); // includes resize
 
   B_.logger_.reset();
+
+  Archiving_Node::clear_history();
 }
 
 void
@@ -261,9 +256,9 @@ nest::iaf_psc_alpha_presc::calibrate()
   V_.expm1_tau_m_ = numerics::expm1( -V_.h_ms_ / P_.tau_m_ );
   V_.expm1_tau_syn_ = numerics::expm1( -V_.h_ms_ / P_.tau_syn_ );
   V_.P30_ = -P_.tau_m_ / P_.c_m_ * V_.expm1_tau_m_;
-  V_.P31_ = V_.gamma_sq_ * V_.expm1_tau_m_ - V_.gamma_sq_ * V_.expm1_tau_syn_
-    - V_.h_ms_ * V_.gamma_ * V_.expm1_tau_syn_ - V_.h_ms_ * V_.gamma_;
-  V_.P32_ = V_.gamma_ * V_.expm1_tau_m_ - V_.gamma_ * V_.expm1_tau_syn_;
+  // these are determined according to a numeric stability criterion
+  V_.P31_ = propagator_31( P_.tau_syn_, P_.tau_m_, P_.c_m_, V_.h_ms_ );
+  V_.P32_ = propagator_32( P_.tau_syn_, P_.tau_m_, P_.c_m_, V_.h_ms_ );
 
   // t_ref_ is the refractory period in ms
   // refractory_steps_ is the duration of the refractory period in whole
@@ -277,7 +272,7 @@ void
 nest::iaf_psc_alpha_presc::update( Time const& origin, const long_t from, const long_t to )
 {
   assert( to >= 0 );
-  assert( static_cast< delay >( from ) < Scheduler::get_min_delay() );
+  assert( static_cast< delay >( from ) < kernel().connection_builder_manager.get_min_delay() );
   assert( from < to );
 
   /* Neurons may have been initialized to superthreshold potentials.
@@ -286,7 +281,7 @@ nest::iaf_psc_alpha_presc::update( Time const& origin, const long_t from, const 
   */
   if ( S_.y3_ >= P_.U_th_ )
   {
-    set_spiketime( Time::step( origin.get_steps() + from + 1 ) );
+    S_.last_spike_step_ = origin.get_steps() + from + 1;
     S_.last_spike_offset_ = V_.h_ms_ * ( 1 - std::numeric_limits< double_t >::epsilon() );
 
     // reset neuron and make it refractory
@@ -294,9 +289,11 @@ nest::iaf_psc_alpha_presc::update( Time const& origin, const long_t from, const 
     S_.r_ = V_.refractory_steps_;
 
     // send spike
+    set_spiketime( Time::step( S_.last_spike_step_ ), S_.last_spike_offset_ );
+
     SpikeEvent se;
     se.set_offset( S_.last_spike_offset_ );
-    network()->send( *this, se, from );
+    kernel().event_delivery_manager.send( *this, se, from );
   }
 
   for ( long_t lag = from; lag < to; ++lag )
@@ -367,7 +364,7 @@ nest::iaf_psc_alpha_presc::update( Time const& origin, const long_t from, const 
     if ( S_.y3_ >= P_.U_th_ )
     {
       // compute spike time
-      set_spiketime( Time::step( T + 1 ) );
+      S_.last_spike_step_ = T + 1;
 
       // The time for the threshpassing
       S_.last_spike_offset_ = V_.h_ms_ - thresh_find_( V_.h_ms_ );
@@ -377,9 +374,11 @@ nest::iaf_psc_alpha_presc::update( Time const& origin, const long_t from, const 
       S_.r_ = V_.refractory_steps_;
 
       // sent event
+      set_spiketime( Time::step( S_.last_spike_step_ ), S_.last_spike_offset_ );
+
       SpikeEvent se;
       se.set_offset( S_.last_spike_offset_ );
-      network()->send( *this, se, lag );
+      kernel().event_delivery_manager.send( *this, se, lag );
     }
 
     // Set new input current. The current change occurs at the
@@ -399,7 +398,8 @@ nest::iaf_psc_alpha_presc::handle( SpikeEvent& e )
 {
   assert( e.get_delay() > 0 );
 
-  const long_t Tdeliver = e.get_rel_delivery_steps( network()->get_slice_origin() );
+  const long_t Tdeliver =
+    e.get_rel_delivery_steps( nest::kernel().simulation_manager.get_slice_origin() );
 
   const double_t spike_weight = V_.PSCInitialValue_ * e.get_weight() * e.get_multiplicity();
   const double_t dt = e.get_offset();
@@ -426,7 +426,8 @@ nest::iaf_psc_alpha_presc::handle( CurrentEvent& e )
   const double_t w = e.get_weight();
 
   // add weighted current; HEP 2002-10-04
-  B_.currents_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ), w * c );
+  B_.currents_.add_value(
+    e.get_rel_delivery_steps( nest::kernel().simulation_manager.get_slice_origin() ), w * c );
 }
 
 void
@@ -436,18 +437,6 @@ nest::iaf_psc_alpha_presc::handle( DataLoggingRequest& e )
 }
 
 // auxiliary functions ---------------------------------------------
-
-inline void
-nest::iaf_psc_alpha_presc::set_spiketime( Time const& now )
-{
-  S_.last_spike_step_ = now.get_steps();
-}
-
-inline nest::Time
-nest::iaf_psc_alpha_presc::get_spiketime() const
-{
-  return Time::step( S_.last_spike_step_ );
-}
 
 nest::double_t
 nest::iaf_psc_alpha_presc::update_y3_delta_() const
@@ -503,7 +492,7 @@ nest::iaf_psc_alpha_presc::thresh_find_( double_t const dt ) const
   case CUBIC:
     return thresh_find3_( dt );
   default:
-    network()->message( SLIInterpreter::M_ERROR,
+    LOG( M_ERROR,
       "iaf_psc_alpha_presc::thresh_find_()",
       "Invalid interpolation---Internal model error." );
     throw BadProperty();

@@ -20,17 +20,25 @@
  *
  */
 
-#include "exceptions.h"
 #include "izhikevich.h"
-#include "network.h"
-#include "dict.h"
-#include "integerdatum.h"
-#include "doubledatum.h"
-#include "dictutils.h"
+
+// C++ includes:
+#include <limits>
+
+// Includes from libnestutil:
 #include "numerics.h"
+
+// Includes from nestkernel:
+#include "event_delivery_manager_impl.h"
+#include "exceptions.h"
+#include "kernel_manager.h"
 #include "universal_data_logger_impl.h"
 
-#include <limits>
+// Includes from sli:
+#include "dict.h"
+#include "dictutils.h"
+#include "doubledatum.h"
+#include "integerdatum.h"
 
 /* ----------------------------------------------------------------
  * Recordables map
@@ -57,30 +65,21 @@ RecordablesMap< izhikevich >::create()
  * ---------------------------------------------------------------- */
 
 nest::izhikevich::Parameters_::Parameters_()
-  : a_( 0.02 )
-  , // a
-  b_( 0.2 )
-  , // b
-  c_( -65.0 )
-  , // c without unit
-  d_( 8.0 )
-  , // d
-  I_e_( 0.0 )
-  , // pA
-  V_th_( 30.0 )
-  , // mV
-  V_min_( -std::numeric_limits< double_t >::max() )
-  , // mV
-  consistent_integration_( true )
+  : a_( 0.02 )                                        // a
+  , b_( 0.2 )                                         // b
+  , c_( -65.0 )                                       // c without unit
+  , d_( 8.0 )                                         // d
+  , I_e_( 0.0 )                                       // pA
+  , V_th_( 30.0 )                                     // mV
+  , V_min_( -std::numeric_limits< double_t >::max() ) // mV
+  , consistent_integration_( true )
 {
 }
 
 nest::izhikevich::State_::State_()
-  : v_( -65.0 )
-  , // membrane potential
-  u_( 0.0 )
-  ,         // membrane recovery variable
-  I_( 0.0 ) // input current
+  : v_( -65.0 ) // membrane potential
+  , u_( 0.0 )   // membrane recovery variable
+  , I_( 0.0 )   // input current
 {
 }
 
@@ -116,8 +115,7 @@ nest::izhikevich::Parameters_::set( const DictionaryDatum& d )
   const double_t h = Time::get_resolution().get_ms();
   if ( not consistent_integration_ && h != 1.0 )
   {
-    net_->message(
-      SLIInterpreter::M_INFO, "Parameters_::set", "Use 1.0 ms as resolution for consistency." );
+    LOG( M_INFO, "Parameters_::set", "Use 1.0 ms as resolution for consistency." );
   }
 }
 
@@ -199,7 +197,7 @@ nest::izhikevich::calibrate()
 void
 nest::izhikevich::update( Time const& origin, const long_t from, const long_t to )
 {
-  assert( to >= 0 && ( delay ) from < Scheduler::get_min_delay() );
+  assert( to >= 0 && ( delay ) from < kernel().connection_builder_manager.get_min_delay() );
   assert( from < to );
 
   const double_t h = Time::get_resolution().get_ms();
@@ -241,7 +239,7 @@ nest::izhikevich::update( Time const& origin, const long_t from, const long_t to
       set_spiketime( Time::step( origin.get_steps() + lag + 1 ) );
 
       SpikeEvent se;
-      network()->send( *this, se, lag );
+      kernel().event_delivery_manager.send( *this, se, lag );
     }
 
     // set new input current
@@ -256,7 +254,7 @@ void
 nest::izhikevich::handle( SpikeEvent& e )
 {
   assert( e.get_delay() > 0 );
-  B_.spikes_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ),
+  B_.spikes_.add_value( e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ),
     e.get_weight() * e.get_multiplicity() );
 }
 
@@ -267,7 +265,8 @@ nest::izhikevich::handle( CurrentEvent& e )
 
   const double_t c = e.get_current();
   const double_t w = e.get_weight();
-  B_.currents_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ), w * c );
+  B_.currents_.add_value(
+    e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ), w * c );
 }
 
 void

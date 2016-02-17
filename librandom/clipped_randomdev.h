@@ -23,13 +23,20 @@
 #ifndef CLIPPED_RANDOMDEV_H
 #define CLIPPED_RANDOMDEV_H
 
+// C++ includes:
 #include <cmath>
 #include <limits>
-#include "randomgen.h"
+
+// Generated includes:
+#include "config.h"
+
+// Includes from librandom:
 #include "randomdev.h"
+#include "randomgen.h"
+
+// Includes from sli:
 #include "dictutils.h"
 #include "sliexceptions.h"
-#include "config.h"
 
 namespace librandom
 {
@@ -61,7 +68,7 @@ Parameters:
 /low  lower bound (default: -inf)
 /high upper bound (default: +inf)
 
-Note:
+Remarks:
 - Clipped generators can be very inefficient if there is little probability
 mass in (low, high).
 - For continuous distributions, the probability of actually drawing
@@ -93,7 +100,7 @@ public:
   ClippedRedrawContinuousRandomDev( RngPtr );
   ClippedRedrawContinuousRandomDev(); // threaded
 
-#if not defined( HAVE_XLC_ICE_ON_USING )
+#if not defined( HAVE_XLC_ICE_ON_USING ) and not defined( IS_K )
   using RandomDev::operator();
 #endif
 
@@ -200,7 +207,7 @@ public:
 // to ensure that they forward to the clipped generator.
 // Null-pointer checking is done in the underlying generator.
 
-#if not defined( HAVE_XLC_ICE_ON_USING )
+#if not defined( HAVE_XLC_ICE_ON_USING ) and not defined( IS_K )
   using RandomDev::operator();
   using RandomDev::ldev;
 #endif
@@ -333,7 +340,7 @@ public:
   ClippedToBoundaryContinuousRandomDev( RngPtr );
   ClippedToBoundaryContinuousRandomDev(); // threaded
 
-#if not defined( HAVE_XLC_ICE_ON_USING )
+#if not defined( HAVE_XLC_ICE_ON_USING ) and not defined( IS_K )
   using RandomDev::operator();
 #endif
 
@@ -442,7 +449,7 @@ public:
 // to ensure that they forward to the clipped generator.
 // Null-pointer checking is done in the underlying generator.
 
-#if not defined( HAVE_XLC_ICE_ON_USING )
+#if not defined( HAVE_XLC_ICE_ON_USING ) and not defined( IS_K )
   using RandomDev::operator();
   using RandomDev::ldev;
 #endif

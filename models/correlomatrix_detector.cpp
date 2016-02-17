@@ -21,21 +21,26 @@
  */
 
 #include "correlomatrix_detector.h"
-#include "network.h"
+
+// C++ includes:
+#include <cmath>      // for less
+#include <functional> // for bind2nd
+#include <numeric>
+
+// Includes from nestkernel:
+#include "kernel_manager.h"
+
+// Includes from sli:
+#include "arraydatum.h"
 #include "dict.h"
 #include "dictutils.h"
-#include "arraydatum.h"
-
-#include <numeric>
-#include <functional> // for bind2nd
-#include <cmath>      // for less
 
 /* ----------------------------------------------------------------
  * Default constructors defining default parameters and state
  * ---------------------------------------------------------------- */
 
 nest::correlomatrix_detector::Parameters_::Parameters_()
-  : delta_tau_( Time::ms( 0.5 ) )
+  : delta_tau_( 5 * Time::get_resolution() )
   , tau_max_( 10 * delta_tau_ )
   , Tstart_( Time::ms( 0.0 ) )
   , Tstop_( Time::pos_inf() )
@@ -296,7 +301,7 @@ nest::correlomatrix_detector::handle( SpikeEvent& e )
 
     // throw away all spikes which are too old to
     // enter the correlation window
-    const delay min_delay = Scheduler::get_min_delay();
+    const delay min_delay = kernel().connection_builder_manager.get_min_delay();
     while (
       !otherSpikes.empty() && ( spike_i - otherSpikes.front().timestep_ ) >= tau_edge + min_delay )
       otherSpikes.pop_front();

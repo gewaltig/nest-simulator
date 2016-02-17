@@ -20,12 +20,18 @@
  *
  */
 
-#include "network.h"
-#include "dictdatum.h"
-#include "connector_model.h"
-#include "common_synapse_properties.h"
+#ifndef STDP_CONNECTION_FACETSHW_HOM_IMPL_H
+#define STDP_CONNECTION_FACETSHW_HOM_IMPL_H
+
 #include "stdp_connection_facetshw_hom.h"
+
+// Includes from nestkernel:
+#include "common_synapse_properties.h"
+#include "connector_model.h"
 #include "event.h"
+
+// Includes from sli:
+#include "dictdatum.h"
 
 namespace nest
 {
@@ -36,20 +42,13 @@ namespace nest
 template < typename targetidentifierT >
 STDPFACETSHWHomCommonProperties< targetidentifierT >::STDPFACETSHWHomCommonProperties()
   : CommonSynapseProperties()
-  ,
-
-  tau_plus_( 20.0 )
+  , tau_plus_( 20.0 )
   , tau_minus_( 20.0 )
-  ,
-
-  Wmax_( 100.0 )
-  ,
-
-  no_synapses_( 0 )
-  , synapses_per_driver_( 50 )
-  , // hardware efficiency of 50/256=20%,
-  // which is comparable to Fieres et al. (2008)
-  driver_readout_time_( 15.0 ) // in ms; measured on hardware
+  , Wmax_( 100.0 )
+  , no_synapses_( 0 )
+  , synapses_per_driver_( 50 )   // hardware efficiency of 50/256=20%,
+                                 // which is comparable to Fieres et al. (2008)
+  , driver_readout_time_( 15.0 ) // in ms; measured on hardware
 
 {
   lookuptable_0_.resize( 16 );
@@ -358,3 +357,5 @@ STDPFACETSHWConnectionHom< targetidentifierT >::set_status( const DictionaryDatu
 }
 
 } // of namespace nest
+
+#endif // #ifndef STDP_CONNECTION_FACETSHW_HOM_IMPL_H

@@ -25,19 +25,25 @@
 
 #ifdef HAVE_GSL
 
-#include "exceptions.h"
-#include "network.h"
-#include "dict.h"
-#include "integerdatum.h"
-#include "doubledatum.h"
-#include "dictutils.h"
-#include "numerics.h"
-#include "universal_data_logger_impl.h"
-#include <limits>
-
+// C++ includes:
+#include <cstdio>
 #include <iomanip>
 #include <iostream>
-#include <cstdio>
+#include <limits>
+
+// Includes from libnestutil:
+#include "numerics.h"
+
+// Includes from nestkernel:
+#include "exceptions.h"
+#include "kernel_manager.h"
+#include "universal_data_logger_impl.h"
+
+// Includes from sli:
+#include "dict.h"
+#include "dictutils.h"
+#include "doubledatum.h"
+#include "integerdatum.h"
 
 /* ----------------------------------------------------------------
  * Recordables map
@@ -103,39 +109,23 @@ nest::iaf_cond_exp_sfa_rr_dynamics( double, const double y[], double f[], void* 
  * ---------------------------------------------------------------- */
 
 nest::iaf_cond_exp_sfa_rr::Parameters_::Parameters_()
-  : V_th_( -57.0 )
-  , // mV
-  V_reset_( -70.0 )
-  , // mV
-  t_ref_( 0.5 )
-  , // ms
-  g_L( 28.95 )
-  , // nS
-  C_m( 289.5 )
-  , // pF
-  E_ex( 0.0 )
-  , // mV
-  E_in( -75.0 )
-  , // mV
-  E_L( -70.0 )
-  , // mV
-  tau_synE( 1.5 )
-  , // ms
-  tau_synI( 10.0 )
-  , // ms
-  I_e( 0.0 )
-  , // pA
-  tau_sfa( 110.0 )
-  , // ms
-  tau_rr( 1.97 )
-  , // ms
-  E_sfa( -70.0 )
-  , // mV
-  E_rr( -70.0 )
-  , // mV
-  q_sfa( 14.48 )
-  ,              // nS
-  q_rr( 3214.0 ) // nS
+  : V_th_( -57.0 )    // mV
+  , V_reset_( -70.0 ) // mV
+  , t_ref_( 0.5 )     // ms
+  , g_L( 28.95 )      // nS
+  , C_m( 289.5 )      // pF
+  , E_ex( 0.0 )       // mV
+  , E_in( -75.0 )     // mV
+  , E_L( -70.0 )      // mV
+  , tau_synE( 1.5 )   // ms
+  , tau_synI( 10.0 )  // ms
+  , I_e( 0.0 )        // pA
+  , tau_sfa( 110.0 )  // ms
+  , tau_rr( 1.97 )    // ms
+  , E_sfa( -70.0 )    // mV
+  , E_rr( -70.0 )     // mV
+  , q_sfa( 14.48 )    // nS
+  , q_rr( 3214.0 )    // nS
 {
 }
 
@@ -367,7 +357,7 @@ void
 nest::iaf_cond_exp_sfa_rr::update( Time const& origin, const long_t from, const long_t to )
 {
 
-  assert( to >= 0 && ( delay ) from < Scheduler::get_min_delay() );
+  assert( to >= 0 && ( delay ) from < kernel().connection_builder_manager.get_min_delay() );
   assert( from < to );
 
   for ( long_t lag = from; lag < to; ++lag )
@@ -424,7 +414,7 @@ nest::iaf_cond_exp_sfa_rr::update( Time const& origin, const long_t from, const 
       S_.y_[ State_::G_RR ] += P_.q_rr;
 
       SpikeEvent se;
-      network()->send( *this, se, lag );
+      kernel().event_delivery_manager.send( *this, se, lag );
     }
 
     // set new input current
@@ -441,10 +431,12 @@ nest::iaf_cond_exp_sfa_rr::handle( SpikeEvent& e )
   assert( e.get_delay() > 0 );
 
   if ( e.get_weight() > 0.0 )
-    B_.spike_exc_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ),
+    B_.spike_exc_.add_value(
+      e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ),
       e.get_weight() * e.get_multiplicity() );
   else
-    B_.spike_inh_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ),
+    B_.spike_inh_.add_value(
+      e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ),
       -e.get_weight() * e.get_multiplicity() ); // ensure conductance is positive
 }
 
@@ -457,7 +449,8 @@ nest::iaf_cond_exp_sfa_rr::handle( CurrentEvent& e )
   const double_t w = e.get_weight();
 
   // add weighted current; HEP 2002-10-04
-  B_.currents_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ), w * c );
+  B_.currents_.add_value(
+    e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ), w * c );
 }
 
 void

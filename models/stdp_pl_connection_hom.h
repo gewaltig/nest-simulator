@@ -40,6 +40,9 @@
    alpha     double - Asymmetry parameter (scales depressing increments as alpha*lambda)
    mu        double - Weight dependence exponent, potentiation
 
+  Remarks:
+   The parameters can only be set by SetDefaults and apply to all synapses of the model.
+
   References:
    [1] Morrison et al. (2007) Spike-timing dependent plasticity in balanced
        random networks. Neural Computation.
@@ -51,9 +54,11 @@
   SeeAlso: synapsedict, stdp_synapse, tsodyks_synapse, static_synapse
 */
 
-#include "connection.h"
-
+// C++ includes:
 #include <cmath>
+
+// Includes from nestkernel:
+#include "connection.h"
 
 namespace nest
 {

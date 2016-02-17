@@ -23,14 +23,20 @@
 #ifndef RECORDING_DEVICE_H
 #define RECORDING_DEVICE_H
 
-#include "nest.h"
+// C++ includes:
+#include <fstream>
+#include <vector>
+
+// Includes from libnestutil:
+#include "lockptr.h"
+
+// Includes from nestkernel:
+#include "device.h"
+#include "nest_types.h"
+
+// Includes from sli:
 #include "dictdatum.h"
 #include "dictutils.h"
-#include "lockptr.h"
-#include "device.h"
-
-#include <vector>
-#include <fstream>
 
 namespace nest
 {
@@ -40,7 +46,7 @@ namespace nest
   Description:
 
   Recording devices are used to measure properties of or signals emitted
-  by network nodes, e.g., using a voltmeter or a spike detector.
+  by network nodes, e.g., using a multimeter, voltmeter or a spike detector.
 
   Recording devices can collect data in memory, display it on the terminal
   output or write it to file in any combination. The output format can be

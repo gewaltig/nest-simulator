@@ -23,6 +23,7 @@
 #ifndef DROP_ODD_SPIKE_CONNECTION_H
 #define DROP_ODD_SPIKE_CONNECTION_H
 
+// Includes from nestkernel:
 #include "connection.h"
 
 
@@ -69,6 +70,7 @@ public:
    */
   DropOddSpikeConnection()
     : ConnectionBase()
+    , weight_( 1.0 )
   {
   }
 

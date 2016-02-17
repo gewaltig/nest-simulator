@@ -22,16 +22,22 @@
 
 #include "amat2_psc_exp.h"
 
-#include "exceptions.h"
-#include "network.h"
-#include "dict.h"
-#include "integerdatum.h"
-#include "doubledatum.h"
-#include "dictutils.h"
+// C++ includes:
+#include <limits>
+
+// Includes from libnestutil:
 #include "numerics.h"
+
+// Includes from nestkernel:
+#include "exceptions.h"
+#include "kernel_manager.h"
 #include "universal_data_logger_impl.h"
 
-#include <limits>
+// Includes from sli:
+#include "dict.h"
+#include "dictutils.h"
+#include "doubledatum.h"
+#include "integerdatum.h"
 
 /* ----------------------------------------------------------------
  * Recordables map
@@ -61,35 +67,22 @@ RecordablesMap< amat2_psc_exp >::create()
  * ---------------------------------------------------------------- */
 
 nest::amat2_psc_exp::Parameters_::Parameters_()
-  : Tau_( 10.0 )
-  , // in ms
-  C_( 200.0 )
-  , // in pF (R=50MOhm)
-  tau_ref_( 2.0 )
-  , // in ms
-  U0_( -70.0 )
-  , // in mV
-  I_e_( 0.0 )
-  , // in pA
-  tau_ex_( 1.0 )
-  , // in ms
-  tau_in_( 3.0 )
-  , // in ms
-  tau_1_( 10.0 )
-  , // in ms
-  tau_2_( 200.0 )
-  , // in ms
-  alpha_1_( 10.0 )
-  , // in mV
-  alpha_2_( 0.0 )
-  , // in mV
-  beta_( 0.0 )
-  , // in mV
-  tau_v_( 5.0 )
-  ,             // in ms
-  omega_( 5.0 ) // resting threshold relative to U0_ in mV
-                // state V_th_ is initialized with the
-                // same value
+  : Tau_( 10.0 )     // in ms
+  , C_( 200.0 )      // in pF (R=50MOhm)
+  , tau_ref_( 2.0 )  // in ms
+  , U0_( -70.0 )     // in mV
+  , I_e_( 0.0 )      // in pA
+  , tau_ex_( 1.0 )   // in ms
+  , tau_in_( 3.0 )   // in ms
+  , tau_1_( 10.0 )   // in ms
+  , tau_2_( 200.0 )  // in ms
+  , alpha_1_( 10.0 ) // in mV
+  , alpha_2_( 0.0 )  // in mV
+  , beta_( 0.0 )     // in mV
+  , tau_v_( 5.0 )    // in ms
+  , omega_( 5.0 )    // resting threshold relative to U0_ in mV
+                     // state V_th_ is initialized with the
+                     // same value
 {
 }
 
@@ -98,11 +91,9 @@ nest::amat2_psc_exp::State_::State_()
   , i_syn_ex_( 0.0 )
   , i_syn_in_( 0.0 )
   , V_m_( 0.0 )
-  , V_th_1_( 0.0 )
-  , // relative to omega_
-  V_th_2_( 0.0 )
-  , // relative to omega_
-  V_th_dv_( 0.0 )
+  , V_th_1_( 0.0 ) // relative to omega_
+  , V_th_2_( 0.0 ) // relative to omega_
+  , V_th_dv_( 0.0 )
   , V_th_v_( 0.0 )
   , r_( 0 )
 {
@@ -367,7 +358,7 @@ nest::amat2_psc_exp::calibrate()
 void
 nest::amat2_psc_exp::update( Time const& origin, const long_t from, const long_t to )
 {
-  assert( to >= 0 && ( delay ) from < Scheduler::get_min_delay() );
+  assert( to >= 0 && ( delay ) from < kernel().connection_builder_manager.get_min_delay() );
   assert( from < to );
 
   // evolve from timestep 'from' to timestep 'to' with steps of h each
@@ -411,7 +402,7 @@ nest::amat2_psc_exp::update( Time const& origin, const long_t from, const long_t
         set_spiketime( Time::step( origin.get_steps() + lag + 1 ) );
 
         SpikeEvent se;
-        network()->send( *this, se, lag );
+        kernel().event_delivery_manager.send( *this, se, lag );
       }
     }
     else
@@ -432,10 +423,12 @@ nest::amat2_psc_exp::handle( SpikeEvent& e )
   assert( e.get_delay() > 0 );
 
   if ( e.get_weight() >= 0.0 )
-    B_.spikes_ex_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ),
+    B_.spikes_ex_.add_value(
+      e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ),
       e.get_weight() * e.get_multiplicity() );
   else
-    B_.spikes_in_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ),
+    B_.spikes_in_.add_value(
+      e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ),
       e.get_weight() * e.get_multiplicity() );
 }
 
@@ -448,7 +441,8 @@ nest::amat2_psc_exp::handle( CurrentEvent& e )
   const double_t w = e.get_weight();
 
   // add weighted current; HEP 2002-10-04
-  B_.currents_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ), w * c );
+  B_.currents_.add_value(
+    e.get_rel_delivery_steps( kernel().simulation_manager.get_slice_origin() ), w * c );
 }
 
 void

@@ -31,18 +31,18 @@
  *  @note Presently included in network.h and connection.h
  */
 
-#include "node.h"
 #include "event.h"
-#include "scheduler.h"
+
+// Includes from nestkernel:
+#include "node.h"
 
 namespace nest
 {
 Event::Event()
-  : sender_gid_( 0 )
-  , // initializing to 0 as this is an unsigned type
-    // gid 0 is network, can never send an event, so
-    // this is safe
-  sender_( NULL )
+  : sender_gid_( 0 ) // initializing to 0 as this is an unsigned type
+                     // gid 0 is network, can never send an event, so
+                     // this is safe
+  , sender_( NULL )
   , receiver_( NULL )
   , p_( -1 )
   , rp_( 0 )
@@ -51,17 +51,6 @@ Event::Event()
   , offset_( 0.0 )
   , w_( 0.0 )
 {
-}
-
-
-delay
-Event::get_max_delay() const
-{
-  // This is dead stupid, but I was not able to
-  // formulate a forward declaration of the static
-  // function Scheduler::get_max_delay() :-(
-  // mog
-  return Scheduler::get_max_delay();
 }
 
 
@@ -112,9 +101,16 @@ void DataLoggingRequest::operator()()
   receiver_->handle( *this );
 }
 
-
 void DataLoggingReply::operator()()
 {
   receiver_->handle( *this );
 }
+
+void GapJunctionEvent::operator()()
+{
+  receiver_->handle( *this );
+}
+
+std::vector< synindex > GapJunctionEvent::supported_syn_ids_;
+size_t GapJunctionEvent::coeff_length_ = 0;
 }
